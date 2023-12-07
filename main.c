@@ -1,804 +1,201 @@
-//Bibliotecas
-#include <stdint.h>
 #include <stdbool.h>
-#include <math.h>
+#include <stdint.h>
 #include "inc/tm4c1294ncpdt.h"
-#include "driverlib/rom_map.h"
 #include "driverlib/sysctl.h"
-#include <stdio.h>
-#include <string.h>
+#include "driverlib/rom_map.h"
+#include <math.h>
 
-//Variables Teclado
-unsigned char Valcon,Temp,Temp2;
-uint8_t   contador;
-int Fila,Columna,val,a, valtec;
-char charTecla;
-int jumpcount=0;
-uint8_t Valcon,Temp,Temp2,i;
+//Variables de Control
+uint32_t door=1;
+uint32_t light1=0;
+uint32_t light2=0;
+uint32_t light3=0;
+uint32_t light4=0;
+uint32_t food=0;
+uint32_t result;
+uint8_t segundos, minutos, horas;
 
-//Variables Almacenamiento
-int number [10];
-char message [32];
-char telephonenumber[10];
-char messagenumber[10];
+//Variables auxiliares
+float temp;
+int TPR = 7;
+uint8_t error;
+uint32_t i;
 uint8_t d_uint8Dato;
-uint8_t d_uint8Message;
-char messagefull[100];
+uint32_t result;
+float voltage;
 
-//Banderas Modo Mensaje
-uint32_t keyboardflag=0;
-uint32_t spaceflag=0;
-uint32_t spaceflag2=0;
+//**Direcciones del DS1307
+int AdreDS1307 =0x068;///Dirección del RTC DS1307
+int AdreSec= 0x00;
+int AdreMin=0x01;
 
-//Inicio Mensaje
-uint32_t field1=0x80;
+//Loop
+uint32_t ui32Loop;
 
-//Counters
-int j=0;
-int a=0;
-int x=0;
-int messagecounter=0;
-
-//Display
-#define bitset(Var,bitno) ((Var) |= 1 << (bitno))
-#define bitclr(Var,bitno) ((Var) &= ~(1 << (bitno)))
-#define PORTD_AHBIS GPIO_PORTK_DATA_R
-#define PORTCON GPIO_PORTM_DATA_R
-#define RS   0x00
-#define R_W  0x01
-#define E    0x02
-#define BIT7 0X80
-#define DISP_ON 0X0F
-#define CLR_DISP 0x01
-void INILCD(void);
-void BUSY (void);
-void BUSY1 (void);
-void _E(void);
-void ESCDAT (unsigned char c);
-void ESCCOM (unsigned char d);
-void CLS(void);
-void BYTEDIS(unsigned char DByte);
-void HOME(void);
-void AND491(void);
-void LEECON(void);
-void ESCCON (uint8_t d);
-
-//Teclado
-void keyboard_INI(void);
-void LeerTeclas(void);
-
-//Funciones Tiempos
-uint32_t ui32SysClkFreq=16000000;//si definimos la frecuencia del reloj con SysCtlClockFreqSet cambiar este valor de 16 MHz
-void delayUs(uint32_t Us);
-void delayMs(uint32_t Ms);
-
-void delayUs(uint32_t Us) { //funcion para lograr un retardo de tantos microsegundos
-    SysCtlDelay(Us*(ui32SysClkFreq/3000000.0));//3/1000000;
-}
-void delayMs(uint32_t Ms) { //funcion para lograr un retardo de tantos mili
-    SysCtlDelay(Ms*(ui32SysClkFreq/3000.0));//3/1000;
-}
-#define bitset(Var,bitno) ((Var) |= 1 << (bitno)) // |         0000 0100 <-0
-#define bitclr(Var,bitno) ((Var) &= ~(1 << (bitno)))  //&      1111 1011
-
-/////Lectura de datos en teclado matricial////
-int filas[] = {0x0E, 0x0D, 0x0B, 0x07};
-int columnas[] = {0x0E, 0x0D, 0x0B, 0x07};
-char teclas[4][4] ={{'1','4','7','*'},{'2','5','8','0'},{'3','6','9','#'},{'A','B','C','D'}};
-
-//FUNCIONES
+//Funciones
 void INIPORTS(void);
-void BOOT(void);
-void PHONEMODEINI(void);
-void CALL (void);
-void ENDCALL (void);
-void INSERTMESSAGENUMBER(void);
-void KEY2(void);
-void KEY3(void);
-void KEY4(void);
-void KEY5(void);
-void KEY6(void);
-void KEY7(void);
-void KEY8(void);
-void KEY9(void);
-void KEY0(void);
-void MESSAGESENT(void);
-char UART6_Escribe_Dato(char dato);
-char UART6_Lee_Dato();
-char UART0_Escribe_Dato(char dato);
-void DEVELOPMENTCREDITS(void);
-void DOORCONTROL(void);
-void LED1CONTROL(void);
-void LED2CONTROL(void);
-void LED3CONTROL(void);
-void LED4CONTROL(void);
-void FOODCONTROL(void);
-void MATRIXCONTROL(void);
-void POWERCONTROL(void);
-void ALARMCONTROL(void);
+void GPIOPortA_Handler(void);
+void OPENDOOR(void);
+void CLOSEDOOR(void);
+void FOODSERVE(void);
+void TEMPREAD(void);
+void FIREALARM(void);
+int esperar();
+void CargarFecha();
+void LeerFecha();
+void RTCREAD(void);
+char UART6_Lee_dato(void);
 
-//SIM808 COMANDOS
-#define CR     0x0D
-#define LF     0x0A
-#define CTRL_Z 0x1A
-
-//FUNCIONES TELEFONO
-void ENVIOCOMANDO(void);
-void ENVIOMENSAJE(void);
-void C_ENTER(void);
-////////////PROGRAMA PRINCIPAL//////////////////
-void main(void)
+//Programa principal
+main(void)
 {
-    BOOT();
-    j=0;
-    while(1)
-    {
-        LeerTeclas();
-        if (charTecla!=0xff)
-        {
-            valtec=charTecla;
-            ESCDAT(valtec);
-            if (valtec == 'A')  //MODO TELEFONO
+
+       // INIPORTS();
+
+        //TIMER 0
+       // TIMER0_TAILR_R= 0xE200; // VALOR DE RECARGA 50 Hz
+       // TIMER0_TAPR_R= 0X04; // PREESCALADOR
+       // TIMER0_CTL_R |= 0X00000041;
+
+        //TIMER 1
+       // TIMER1_TAILR_R= 0x1200; // VALOR DE RECARGA 2 Hz
+       // TIMER1_TAPR_R= 0X7A; // PREESCALADOR
+       // TIMER1_CTL_R |= 0X00000041;
+/*
+        //TIMER 4
+        TIMER4_TAILR_R= 0xE200; // VALOR DE RECARGA 50 Hz
+        TIMER4_TAPR_R= 0X04; // PREESCALADOR
+        TIMER4_CTL_R |= 0X00000041;
+*/
+         while(1)
+         {
+          /*  TEMPREAD();
+            RTCREAD();
+            UART6_Lee_dato();
+            if(d_uint8Dato==23)
             {
-                UART6_Escribe_Dato ('A');
-                UART6_Escribe_Dato ('T');
-                C_ENTER();
-                PHONEMODEINI();
-                while(1)
-                {
-                    LeerTeclas();
-                    if (charTecla!=0xff)
-                    {
-                        //LLENADO DE ARREGLO
-                        if (j<10)
-                        {
-                            number[j]=charTecla;
-                            telephonenumber[j]=number[j]-48;
-                            //REGRESO A HOME
-                            if (number[j] == '*')
-                            {
-                                main();
-                            }
-                            ESCDAT(number[j]);
-                            j++;
-                        }
-                        //FIN LLENADO DE ARREGLO
-                        if (charTecla == 'A') // OPCION 1 LLAMAR
-                        {
-                            ESCCOM(CLR_DISP);
-                            UART6_Escribe_Dato ('A');
-                            UART6_Escribe_Dato ('T');
-                            UART6_Escribe_Dato ('D');
-                            UART6_Escribe_Dato (telephonenumber[0]+'0');
-                            UART6_Escribe_Dato (telephonenumber[1]+'0');
-                            UART6_Escribe_Dato (telephonenumber[2]+'0');
-                            UART6_Escribe_Dato (telephonenumber[3]+'0');
-                            UART6_Escribe_Dato (telephonenumber[4]+'0');
-                            UART6_Escribe_Dato (telephonenumber[5]+'0');
-                            UART6_Escribe_Dato (telephonenumber[6]+'0');
-                            UART6_Escribe_Dato (telephonenumber[7]+'0');
-                            UART6_Escribe_Dato (telephonenumber[8]+'0');
-                            UART6_Escribe_Dato (telephonenumber[9]+'0');
-                            UART6_Escribe_Dato (';');
-                            C_ENTER();
-                            CALL();
-                        }
-                        if (charTecla == 'B') //OPCION 2 COLGAR
-                        {
-                            UART6_Escribe_Dato ('A');
-                            UART6_Escribe_Dato ('T');
-                            UART6_Escribe_Dato ('H');
-                            C_ENTER();
-                            ENDCALL();
-                        }
-                        if (charTecla == 'C') //OPCION 3 BORRAR NUMERO ESCRITO
-                        {
-                            ESCCOM(CLR_DISP);
-                            j=0;
-                        }
-                    }
-                }
+                door=0;
             }
-
-            if (valtec == 'B')  //MODO MENSAJE
+            if(d_uint8Dato==24)
             {
-                UART6_Escribe_Dato ('A');
-                UART6_Escribe_Dato ('T');
-                C_ENTER();
-                spaceflag=0;
-                spaceflag2=0;
-                field1=0x80;
-                messagecounter=0;
-                ESCCOM(CLR_DISP);
-                while(1)
-                {
-                    LeerTeclas();
-                    if (charTecla!=0xff)
-                    {
-
-                        valtec=charTecla;
-                        //REGRESO A HOME
-                        if (valtec == '*')
-                        {
-                            main();
-                        }
-                        if (charTecla == 'A') //ENVIAR MENSAJE
-                        {
-                            j=0;
-                            ESCCOM(CLR_DISP);
-                            INSERTMESSAGENUMBER();
-                            ESCCON(0XC0);
-                            while(1)
-                            {
-                                LeerTeclas();
-                                if (charTecla!=0xff)
-                                {
-                                    //LLENADO DE ARREGLO
-                                    if (j<11)
-                                    {
-                                        number[j]=charTecla;
-                                        messagenumber[j]=number[j]-48;
-                                        //REGRESO A HOME
-                                        if (number[j] == '*')
-                                        {
-                                            main();
-                                        }
-
-                                        if(j==9)
-                                        {
-                                            UART6_Escribe_Dato ('A');
-                                            UART6_Escribe_Dato ('T');
-                                            UART6_Escribe_Dato (0x2B);
-                                            UART6_Escribe_Dato ('C');
-                                            UART6_Escribe_Dato ('M');
-                                            UART6_Escribe_Dato ('G');
-                                            UART6_Escribe_Dato ('S');
-                                            UART6_Escribe_Dato (0X3D);
-                                            UART6_Escribe_Dato (0X22);
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (messagenumber[0]+'0');
-                                            UART6_Escribe_Dato (messagenumber[1]+'0');
-                                            UART6_Escribe_Dato (messagenumber[2]+'0');
-                                            UART6_Escribe_Dato (messagenumber[3]+'0');
-                                            UART6_Escribe_Dato (messagenumber[4]+'0');
-                                            UART6_Escribe_Dato (messagenumber[5]+'0');
-                                            UART6_Escribe_Dato (messagenumber[6]+'0');
-                                            UART6_Escribe_Dato (messagenumber[7]+'0');
-                                            UART6_Escribe_Dato (messagenumber[8]+'0');
-                                            UART6_Escribe_Dato (messagenumber[9]+'0');
-                                            UART6_Escribe_Dato (0X22);
-                                            C_ENTER();
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (message[0]);
-                                            UART6_Escribe_Dato (message[1]);
-                                            UART6_Escribe_Dato (message[2]);
-                                            UART6_Escribe_Dato (message[3]);
-                                            UART6_Escribe_Dato (message[4]);
-                                            UART6_Escribe_Dato (message[5]);
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (message[6]);
-                                            UART6_Escribe_Dato (message[7]);
-                                            UART6_Escribe_Dato (message[8]);
-                                            UART6_Escribe_Dato (message[9]);
-                                            UART6_Escribe_Dato (message[10]);
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (message[11]);
-                                            UART6_Escribe_Dato (message[12]);
-                                            UART6_Escribe_Dato (message[13]);
-                                            UART6_Escribe_Dato (message[14]);
-                                            UART6_Escribe_Dato (message[15]);
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (message[16]);
-                                            UART6_Escribe_Dato (message[17]);
-                                            UART6_Escribe_Dato (message[18]);
-                                            UART6_Escribe_Dato (message[19]);
-                                            UART6_Escribe_Dato (message[20]);
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (message[21]);
-                                            UART6_Escribe_Dato (message[22]);
-                                            UART6_Escribe_Dato (message[23]);
-                                            UART6_Escribe_Dato (message[24]);
-                                            UART6_Escribe_Dato (message[25]);
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (message[26]);
-                                            UART6_Escribe_Dato (message[27]);
-                                            UART6_Escribe_Dato (message[28]);
-                                            UART6_Escribe_Dato (message[29]);
-                                            UART6_Escribe_Dato (message[30]);
-                                            SysCtlDelay(53333);
-                                            UART6_Escribe_Dato (message[31]);
-                                            UART6_Escribe_Dato (CTRL_Z);
-                                            C_ENTER();
-                                        }
-
-                                        if (charTecla == 'A') //ENVIAR MENSAJE
-                                       {
-
-                                            ESCCOM(CLR_DISP);
-                                            MESSAGESENT();
-                                       }
-
-                                        ESCDAT(number[j]);
-                                        j++;
-
-
-                                    } //FIN LLENADO DE ARREGLO
-                                    if (charTecla == 'C') //BORRAR NUMERO
-                                    {
-                                            ESCCOM(CLR_DISP);
-                                            INSERTMESSAGENUMBER();
-                                            ESCCON(0XC0);
-                                            j=0;
-                                    }
-
-                                }
-
-                            }
-
-                        }
-                        if (charTecla == 'C') //LIMPIAR MENSAJE
-                        {
-                            ESCCOM(CLR_DISP);
-                            ESCCON(0x80);
-                            field1=0x80;
-                            spaceflag=0;
-                            spaceflag2=0;
-                            messagecounter=0;
-                        }
-                        LeerTeclas();
-                        if (valtec == '2')
-                        {
-                            KEY2();
-                        }
-                        if (valtec == '3')
-                        {
-                            KEY3();
-                        }
-                        if (valtec == '4')
-                        {
-                            KEY4();
-                        }
-                        if (valtec == '5')
-                        {
-                            KEY5();
-                        }
-                        if (valtec == '6')
-                        {
-                            KEY6();
-                        }
-                        if (valtec == '7')
-                        {
-                            KEY7();
-                        }
-                        if (valtec == '8')
-                        {
-                            KEY8();
-                        }
-                        if (valtec == '9')
-                        {
-                            KEY9();
-                        }
-                        if (valtec == '0')
-                        {
-                            KEY0();
-                        }
-                    }
-                }
-            } //FIN MODO MENSAJE
-
-
-            if (valtec == 'C')  //MODO CONTROL
+                light1=1;
+            }
+            if(d_uint8Dato==25)
             {
-                ESCCOM(CLR_DISP);
-                x=0;
-                while(1)
-                {
-                    UART6_Lee_Dato(); //[73-76]
-                    if(x<100)
-                    {
-                        messagefull[x]=d_uint8Message;
-                        x++;
-                    }
-                    //PUERTA
-                    if (messagefull[73] == 'D' && messagefull[74] == 'O' && messagefull[75] == 'O' && messagefull[76] == 'R')
-                    {
-                        ESCCOM(CLR_DISP);
-                        DOORCONTROL();
-                    }
-
-                    //FOCO 1
-                    if (messagefull[73] == 'L' && messagefull[74] == 'E' && messagefull[75] == 'D' && messagefull[76] == '1')
-                    {
-                        ESCCOM(CLR_DISP);
-                        LED1CONTROL();
-                    }
-
-                    //FOCO 2
-                    if (messagefull[73] == 'L' && messagefull[74] == 'E' && messagefull[75] == 'D' && messagefull[76] == '2')
-                    {
-                        ESCCOM(CLR_DISP);
-                        LED2CONTROL();
-                    }
-
-                    //FOCO 3
-                    if (messagefull[73] == 'L' && messagefull[74] == 'E' && messagefull[75] == 'D' && messagefull[76] == '3')
-                    {
-                        ESCCOM(CLR_DISP);
-                        LED3CONTROL();
-                    }
-
-                    //FOCO 4
-                    if (messagefull[73] == 'L' && messagefull[74] == 'E' && messagefull[75] == 'D' && messagefull[76] == '4')
-                    {
-                        ESCCOM(CLR_DISP);
-                        LED4CONTROL();
-                    }
-
-                    //DISPENSADOR
-                   if (messagefull[73] == 'F' && messagefull[74] == 'O' && messagefull[75] == 'O' && messagefull[76] == 'D')
-                   {
-                       ESCCOM(CLR_DISP);
-                       FOODCONTROL();
-                   }
-
-                   //MATRIZ LED
-                   if (messagefull[73] == 'P' && messagefull[74] == 'L' && messagefull[75] == 'A' && messagefull[76] == 'Y')
-                   {
-                       ESCCOM(CLR_DISP);
-                       MATRIXCONTROL();
-
-                   }
-
-                   //POTENCIA
-                   if (messagefull[73] == 'P' && messagefull[74] == 'O' && messagefull[75] == 'W' && messagefull[76] == 'R')
-                  {
-                      ESCCOM(CLR_DISP);
-                      POWERCONTROL();
-                  }
-
-                   //APAGAR ALARMA
-                   if (messagefull[73] == 'F' && messagefull[74] == 'I' && messagefull[75] == 'R' && messagefull[76] == 'E')
-                   {
-                       ESCCOM(CLR_DISP);
-                       ALARMCONTROL();
-                   }
-
-                }
-            } //FIN MODO CONTROL
-
-            if (valtec == 'D')  //USO LIBRE
+                light2=1;
+            }
+            if(d_uint8Dato==26)
+           {
+               light3=1;
+           }
+            if(d_uint8Dato==28)
+          {
+              food=1;
+          }*/
+          /*  if(door==1)
             {
-                ESCCOM(CLR_DISP);
-                DEVELOPMENTCREDITS();
-            } //FIN USO LIBRE
+                OPENDOOR();
+            }
+            if(door==0)
+            {
+                CLOSEDOOR();
+            }
+*/
+            if(d_uint8Dato==24) light1=1;
+            if(light1!=0)
+            {
+                GPIO_PORTK_DATA_R ^= 0x01;
+                light1=0;
+                SysCtlDelay(350000);
+            }
+            /*
+            if(light2!=0)
+            {
+                GPIO_PORTK_DATA_R ^= 0x02;
+                light2=0;
+                SysCtlDelay(350000);
+            }
+            if(light3!=0)
+            {
+                GPIO_PORTK_DATA_R ^= 0x04;
+                light3=0;
+                SysCtlDelay(350000);
+            }
+            if(light4!=0)
+            {
+                GPIO_PORTK_DATA_R ^= 0x08;
+                light4=0;
+                SysCtlDelay(350000);
+            }*/
+/*
+            if(food==1)
+            {
+                FOODSERVE();
+            }*/
+/*
+            if(temp>40)
+            {
+                FIREALARM();
+            }
+            if(temp<=40)
+            {
+                TIMER1_TAMATCHR_R = 0X0000;
+            }*/
 
         }
-
-    }
 }
 
-////////FUNCIONES/////////////
-
-//FUNCION ARRANQUE
-void BOOT(void)
-{
-    INIPORTS();
-    INILCD(); //inicializa el display 16 x 2
-    ESCCOM(CLR_DISP);
-    ESCDAT('S');
-    ESCDAT('E');
-    ESCDAT('L');
-    ESCDAT('E');
-    ESCDAT('C');
-    ESCDAT('C');
-    ESCDAT('I');
-    ESCDAT('O');
-    ESCDAT('N');
-    ESCDAT('A');
-    ESCCON(0xC0);
-    ESCDAT('M');
-    ESCDAT('O');
-    ESCDAT('D');
-    ESCDAT('O');
-    ESCDAT(':');
-    ESCDAT(' ');
-}
-
-//INICIALIZACIÓN MODO TELÉFONO
-void PHONEMODEINI(void)
-{
-    spaceflag=0;
-    spaceflag2=0;
-    field1=0x80;
-    ESCCOM(CLR_DISP);
-}
-
-//LLAMADA
-void CALL (void)
-{
-    ESCDAT('L');
-    ESCDAT('L');
-    ESCDAT('A');
-    ESCDAT('M');
-    ESCDAT('A');
-    ESCDAT('N');
-    ESCDAT('D');
-    ESCDAT('O');
-    ESCDAT('.');
-    ESCDAT('.');
-    ESCDAT('.');
-    ESCCON(0XC0);
-}
-
-//COLGAR
-void ENDCALL (void)
-{
-    ESCCOM(CLR_DISP);
-    ESCDAT('F');
-    ESCDAT('I');
-    ESCDAT('N');
-    SysCtlDelay(4300000);
-    ESCCOM(CLR_DISP);
-    main();
-}
-
-//INSERTAR NUMERO DEL MENSAJE
-void INSERTMESSAGENUMBER (void)
-{
-    ESCDAT('N');
-    ESCDAT('U');
-    ESCDAT('M');
-    ESCDAT('E');
-    ESCDAT('R');
-    ESCDAT('O');
-    ESCDAT(':');
-}
-
-//MENSAJE ENVIADO
-void MESSAGESENT (void)
-{
-    ESCDAT('E');
-    ESCDAT('N');
-    ESCDAT('V');
-    ESCDAT('I');
-    ESCDAT('A');
-    ESCDAT('D');
-    ESCDAT('O');
-    SysCtlDelay(4300000);
-    ESCCOM(CLR_DISP);
-    main();
-}
-
-//TECLA "2"
-void KEY2(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-     ESCCON(field1);
-     ESCDAT('A');
-     message[messagecounter]='A';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('B');
-    message[messagecounter]='B';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('C');
-    keyboardflag=0;
-    message[messagecounter]='C';
-    }
-}
-
-//TECLA "3"
-void KEY3(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-    ESCCON(field1);
-    ESCDAT('D');
-    message[messagecounter]='D';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('E');
-    message[messagecounter]='E';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('F');
-    message[messagecounter]='F';
-    keyboardflag=0;
-    }
-}
-
-//TECLA "4"
-void KEY4(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-    ESCCON(field1);
-    ESCDAT('G');
-    message[messagecounter]='G';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('H');
-    message[messagecounter]='H';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('I');
-    message[messagecounter]='I';
-    keyboardflag=0;
-    }
-}
-
-//TECLA "5"
-void KEY5(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-    ESCCON(field1);
-    ESCDAT('J');
-    message[messagecounter]='J';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('K');
-    message[messagecounter]='K';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('L');
-    message[messagecounter]='L';
-    keyboardflag=0;
-    }
-}
-
-//TECLA "6"
-void KEY6(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-    ESCCON(field1);
-    ESCDAT('M');
-    message[messagecounter]='M';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('N');
-    message[messagecounter]='N';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('O');
-    message[messagecounter]='O';
-    keyboardflag=0;
-    }
-}
-
-//TECLA "7"
-void KEY7(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-    ESCCON(field1);
-    ESCDAT('P');
-    message[messagecounter]='P';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('Q');
-    message[messagecounter]='Q';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('R');
-    message[messagecounter]='R';
-    }
-    else if (keyboardflag == 4){
-    ESCCON(field1);
-    ESCDAT('S');
-    message[messagecounter]='S';
-    keyboardflag=0;
-    }
-}
-
-//TECLA "8"
-void KEY8(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-    ESCCON(field1);
-    ESCDAT('T');
-    message[messagecounter]='T';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('U');
-    message[messagecounter]='U';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('V');
-    message[messagecounter]='V';
-    keyboardflag=0;
-    }
-}
-
-//TECLA "9"
-void KEY9(void)
-{
-    keyboardflag++;
-    if (keyboardflag == 1){
-    ESCCON(field1);
-    ESCDAT('W');
-    message[messagecounter]='W';
-    }
-    else if (keyboardflag == 2){
-    ESCCON(field1);
-    ESCDAT('X');
-    message[messagecounter]='X';
-    }
-    else if (keyboardflag == 3){
-    ESCCON(field1);
-    ESCDAT('Y');
-    message[messagecounter]='Y';
-    }
-    else if (keyboardflag == 4){
-    ESCCON(field1);
-    ESCDAT('Z');
-    message[messagecounter]='Z';
-    keyboardflag=0;
-    }
-}
-
-//TECLA "0"
-void KEY0(void)
-{
-    if(spaceflag<16)
-    {
-    spaceflag++;
-    field1=0x80+spaceflag;
-    }
-    if(spaceflag>15)
-    {
-    field1=0xC0+spaceflag2;
-    spaceflag2++;
-    }
-    messagecounter++;
-}
-
-//FUNCION INICIALIZACIÓN DE PUERTOS
+//Inicialización de Puertos
 void INIPORTS(void)
 {
-    SYSCTL_RCGCGPIO_R |= 0X6A81;
-    while ((SYSCTL_PRGPIO_R&0x6A81)!=0x6A81);
+    //TIMERS
+    SYSCTL_RCGCGPIO_R |= 0x00002A1B; //A,B,D,E,K,M,P
+    SYSCTL_RCGCTIMER_R |= 0X13; //TIMER 0 & 1 & 4
+    SYSCTL_RCGCADC_R  = 0x01; //ADC0
+    SYSCTL_RCGCI2C_R |= 0x0001;//I2C
+    SYSCTL_RCGCUART_R |=0X40;//UART
 
-    SYSCTL_RCGCUART_R |=0X41; //UART 0 Y 6
+    ui32Loop = SYSCTL_RCGCGPIO_R;
 
     //PUERTO A
-    GPIO_PORTA_AHB_PCTL_R = (GPIO_PORTA_AHB_PCTL_R&0XFFFFFF00)+0X00000011;
-    GPIO_PORTA_AHB_DEN_R|=0X03;
-    GPIO_PORTA_AHB_AMSEL_R &= ~0X03;
-    GPIO_PORTA_AHB_AFSEL_R |= 0X03;
+    GPIO_PORTA_AHB_DIR_R &= ~0x80;
+    GPIO_PORTA_AHB_DEN_R |= 0x80;
+    GPIO_PORTA_AHB_PUR_R |= 0x80;
+    GPIO_PORTA_AHB_IS_R &= ~0x80;
+    GPIO_PORTA_AHB_IBE_R &= ~0x01;
+    GPIO_PORTA_AHB_IEV_R &= ~0x80;
+    GPIO_PORTA_AHB_ICR_R = 0x80;
+    GPIO_PORTA_AHB_IM_R |= 0x80;
 
-    //PUERTO H
-    GPIO_PORTH_AHB_DATA_R=0X00;
-    GPIO_PORTH_AHB_DEN_R|=0XFF;
-    GPIO_PORTH_AHB_DIR_R=0X0f;
+    //PUERTO B
+    GPIO_PORTB_AHB_AFSEL_R |= 0x0C;
+    GPIO_PORTB_AHB_ODR_R |= 0x08;
+    GPIO_PORTB_AHB_DIR_R |= 0x0C;
+    GPIO_PORTB_AHB_DEN_R |= 0x0C;
+    GPIO_PORTB_AHB_PCTL_R|=0x00002200;
+
+    //PUERTO D
+    GPIO_PORTD_AHB_DEN_R |= 0x45;
+    GPIO_PORTD_AHB_DIR_R |= 0x45;
+    GPIO_PORTD_AHB_DATA_R = 0x00;
+    GPIO_PORTD_AHB_AFSEL_R = 0x45;
+    GPIO_PORTD_AHB_PCTL_R = 0x03000303;
+
+    //PUERTO E
+    GPIO_PORTE_AHB_DIR_R = 0x00;
+    GPIO_PORTE_AHB_AFSEL_R |= 0x10;
+    GPIO_PORTE_AHB_DEN_R = 0x00;
+    GPIO_PORTE_AHB_AMSEL_R |= 0x10;
 
     //PUERTO K
-    GPIO_PORTK_DATA_R=0X00;
-    GPIO_PORTK_DEN_R|=0XFF;
-    GPIO_PORTK_DIR_R|=0Xff;
+    GPIO_PORTK_DEN_R |= 0x0F;
+    GPIO_PORTK_DIR_R |= 0x0F;
+    GPIO_PORTK_DATA_R = 0x00;
 
     //PUERTO M
-    GPIO_PORTM_DATA_R=0X00;
-    GPIO_PORTM_DEN_R|=0X07;
-    GPIO_PORTM_DIR_R|=0x07;
+    GPIO_PORTM_DIR_R|=0xFF;
+    GPIO_PORTM_DEN_R|=0XFF;
+    GPIO_PORTM_DATA_R=0x00;
 
     //PUERTO P
     GPIO_PORTP_PCTL_R = (GPIO_PORTP_PCTL_R&0XFFFFFF00)+0X00000011;
@@ -806,17 +203,40 @@ void INIPORTS(void)
     GPIO_PORTP_AMSEL_R &= ~0X03;
     GPIO_PORTP_AFSEL_R |= 0X03;
 
-    //PUERTO Q
-    GPIO_PORTQ_DEN_R|=0XFF;
-    GPIO_PORTQ_DIR_R=0X00;
-    GPIO_PORTQ_PUR_R=0X0F;
+    //TIMER 0
+    TIMER0_CTL_R=0X00000000;
+    TIMER0_CFG_R= 0X00000004;
+    TIMER0_TAMR_R= 0X0000000A;
 
-    //UART 0
-    UART0_CTL_R &=~0X0001;
-    UART0_IBRD_R = 8;
-    UART0_FBRD_R =43;
-    UART0_LCRH_R =0X0070;
-    UART0_CTL_R= 0X0301 ;
+    //TIMER 1
+    TIMER1_CTL_R=0X00000000;
+    TIMER1_CFG_R= 0X00000004;
+    TIMER1_TAMR_R= 0X0000000A;
+
+    //TIMER 4
+    TIMER4_CTL_R=0X00000000;
+    TIMER4_CFG_R= 0X00000004;
+    TIMER4_TAMR_R= 0X0000000A;
+
+    //I2C0
+    I2C0_MCR_R = 0x00000010;
+    I2C0_MTPR_R = TPR;
+
+    //ADC0
+    ADC0_PC_R = 0x01;
+    ADC0_SSPRI_R = 0x0123;
+    ADC0_ACTSS_R = 0x0000;
+    ADC0_EMUX_R = 0x0000;
+    ADC0_SSEMUX3_R = 0x00;
+    ADC0_SSMUX3_R = (ADC0_SSMUX3_R & 0xFFFFFFF0) + 9;
+    ADC0_SSCTL3_R = 0x0006;
+    ADC0_IM_R = 0x0000;
+    ADC0_ACTSS_R |= 0x0008;
+
+    SYSCTL_PLLFREQ0_R |= SYSCTL_PLLFREQ0_PLLPWR;
+    while((SYSCTL_PLLSTAT_R&0x01)==0);
+    SYSCTL_PLLFREQ0_R &= ~SYSCTL_PLLFREQ0_PLLPWR;
+    ADC0_ISC_R = 0x0008;                // Se recomienda Limpia la bandera RIS del ADC0
 
     //UART 6
     UART6_CTL_R &=~0X0001;
@@ -824,345 +244,159 @@ void INIPORTS(void)
     UART6_FBRD_R =43 ;
     UART6_LCRH_R =0X0070; //8 BITS, HABILITAR FIFO
     UART6_CTL_R= 0X0301 ;
+
+    //INTERRUPCIONES
+    NVIC_EN0_R= 0x01;  //habilita la interrupción en puerto A
+    //NVIC_PRI0_R =0xD0;
 }
 
-//FUNCIÓN INICIALIZACIÓN DISPLAY 2X16
-void INILCD(void)
+//INTERRUPCIÓN PUERTO A
+void GPIOPortA_Handler(void)
 {
-    PORTCON=0X00;
-    PORTD_AHBIS=0X38;
-
-    SysCtlDelay(533000);
-    _E();
-    SysCtlDelay (53000);
-    _E();
-    SysCtlDelay (53000);
-    PORTD_AHBIS=0X38;
-    _E();
-    SysCtlDelay (53000);
-    ESCCOM(0X38);
-    ESCCOM(DISP_ON);
-
-    ESCCOM(CLR_DISP);
-
-    ESCCOM(0X06);
-    ESCCOM(0X38);
+    GPIO_PORTA_AHB_ICR_R = 0x80;
+    door=0;
 }
 
-//FUNCIÓN QUE GENERA UN PULSO DE 1.25 uS EN LA TERMINAL E DEL DISPLAY
-void _E(void)
+
+//ABRIR PUERTA
+void OPENDOOR(void)
 {
-    bitset(PORTCON,E);
-    SysCtlDelay (3);  //retraso de 500 nS
-    bitclr(PORTCON,E);
+    TIMER0_TAMATCHR_R = 31500;
+    SysCtlDelay(8000000);
+    door=1;
 }
 
-//ESCRITURA DE DATO EN EL DISPLAY
-void ESCDAT (unsigned char c)
+//CERRAR PUERTA
+void CLOSEDOOR(void)
 {
-    PORTD_AHBIS = c;
-    bitset(PORTCON,RS);
-    _E();
-    BUSY1();
-    bitclr(PORTCON,RS);
+    TIMER0_TAMATCHR_R = 16500;
+    SysCtlDelay(8000000);
+    door=1;
 }
 
-//COMANDO AL DISPLAY
-void ESCCOM (unsigned char d)
+//SERVIR COMIDA
+void FOODSERVE(void)
 {
-    PORTD_AHBIS = d;
-    bitclr(PORTCON,RS);
-    _E();
-    BUSY1();
+    TIMER0_TAMATCHR_R = 31500;
+    SysCtlDelay(16000000);
+    TIMER0_TAMATCHR_R = 16500;
+    food=0;
 }
 
-//COMANDO AL REGISTRO DE CONTROL DEL LCD
-void ESCCON (uint8_t d)
+//LEER TEMPERATURA
+void TEMPREAD(void)
 {
-    PORTD_AHBIS = d;
-    bitclr(PORTCON,R_W);
-    bitclr(PORTCON,RS);
-    _E();
-    BUSY();
+    ADC0_ISC_R = 0x0008;
+    ADC0_PSSI_R = 0x0008;
+    while ((ADC0_RIS_R & 0x08)==0);
+    result = (ADC0_SSFIFO3_R & 0xFFF)*100;
+    ADC0_ISC_R = 0x0008;
+    temp=(result*3.3)/4095;
 }
 
-//CLS
-void CLS(void)
+//ALARMA INCENDIOS
+void FIREALARM(void)
 {
-    ESCCOM(0x01);
-}
+    TIMER1_TAMATCHR_R = 0X0900;
+    TIMER1_TAPR_R = 0X00;
+    SysCtlDelay(4000000);
 
-//HOME
-void HOME(void)
-{
-    ESCCOM(0x02);
-}
-
-// GENERA LOS CORRIMIENTOS PARA ALINEAR COMO EN EL AND491 PARA LOS DISPLAYS GENERICOS
-void AND491(void)
-{
-    ESCCOM (0X1C);
-    ESCCOM (0X1C);
-    ESCCOM (0X1C);
-    ESCCOM (0X1C);
-}
-
-//BANDERA BUSY
-void BUSY (void)
-{
-    do LEECON( );
-    while ((Valcon & BIT7) != 0);
-}
-
-//LEE EL VALOR DEL REGISTRO DE CONTROL
-void   LEECON(void)
-{
-    PORTD_AHBIS=0;
-    GPIO_PORTK_DIR_R=0x00;
-    bitset(PORTCON,R_W);
-    bitset(PORTCON,E);
-    SysCtlDelay(2); //espera 384 nS
-    Temp=PORTD_AHBIS;
-    bitclr(PORTCON,E);
-    bitclr(PORTCON,RS);
-    bitclr(PORTCON,R_W);
-    GPIO_PORTK_DIR_R=0XFF;
-    Valcon=Temp;
-}
-
-//ESCRIBE UN BYTE EN LA PANTALLA
-void BYTEDIS(unsigned char DByte)
-{
-    Temp2=DByte;
-    Temp2=Temp2>>4;
-    if (Temp2<=0x09)
-    Temp2+=0x30;
-    else
-    Temp2+=0x37;
-    ESCDAT(Temp2);
-    Temp2=DByte&0x0f;
-    if (Temp2<=0x09)
-    Temp2+=0x30;
-    else
-    Temp2+=0x37;
-    ESCDAT(Temp2);
-}
-
-//BANDERA BUSY1
-void BUSY1(void)
-{
-    SysCtlDelay(10066);
-}
-
-//LEER TECLAS DEL TECLADO MATRICIAL
-
-void LeerTeclas(void)
-{
-    charTecla=0xff;
-    if((GPIO_PORTQ_DATA_R&0x0f)!=0x0f)
+    while(1)
     {
-        delayUs(20000);
-        val =  GPIO_PORTQ_DATA_R;
-        for (Fila=0; Fila<4; Fila++)
-        {
-            GPIO_PORTH_AHB_DATA_R = filas[Fila];
-            for (Columna=0;Columna<4;Columna++)
-            {
-                if (GPIO_PORTQ_DATA_R == columnas[Columna])
-                {
-                    charTecla=teclas [Fila][Columna];
-                }
-            }
-        }
-    GPIO_PORTH_AHB_DATA_R &= 0x00;
-    while((GPIO_PORTQ_DATA_R&0x0f)!=0x0f);
-       delayUs(20000);
-    }..
+        GPIO_PORTM_DATA_R=0b00001000;
+        SysCtlDelay(83333);
+        GPIO_PORTM_DATA_R=0b00000100;
+        SysCtlDelay(83333);
+        GPIO_PORTM_DATA_R=0b00000010;
+        SysCtlDelay(83333);
+        GPIO_PORTM_DATA_R=0b00000001;
+        SysCtlDelay(83333);
+    }
 }
 
-//ENVIAR DATO A TIVA 2
-char UART0_Escribe_Dato(char dato1)
+//ESPERAR
+int esperar(){
+    while(I2C0_MCS_R&0x00000001){}; //Espero a que la transmisión acabe
+      if(I2C0_MCS_R&0x00000002==1){ //¿Hubo error?
+          error=1;
+          return error;
+      };
+      return 0;
+
+}
+
+//CARGAR FECHA
+void CargarFecha(){
+
+    int segundos=0x00, minutos=0x11, horas=0x08;
+    while(I2C0_MCS_R&0x00000001){};
+    I2C0_MSA_R=(AdreDS1307<<1)&0xFE;
+    I2C0_MDR_R=AdreSec&0x0FF;
+    I2C0_MCS_R=(I2C_MCS_RUN|I2C_MCS_START);
+    for(i=0;i<300;i++){}
+    esperar();
+
+    //SEGUNDOS
+    I2C0_MDR_R=segundos;
+    I2C0_MCS_R=(I2C_MCS_RUN);
+    for(i=0;i<300;i++){} //Delay
+    esperar();
+
+    //MINUTOS
+    I2C0_MDR_R=minutos;
+    I2C0_MCS_R=(I2C_MCS_RUN);
+    for(i=0;i<300;i++){}
+    esperar();
+
+    //HORAS
+    I2C0_MDR_R=horas;
+    I2C0_MCS_R=(I2C_MCS_RUN);
+    for(i=0;i<300;i++){}
+    esperar();
+
+}
+
+//LEER FECHA
+void LeerFecha(){
+        while(I2C0_MCS_R&0x00000001){};
+
+        I2C0_MSA_R=(AdreDS1307<<1)&0xFE;
+        I2C0_MDR_R=AdreSec&0x0FF;
+        I2C0_MCS_R=(I2C_MCS_START|I2C_MCS_RUN);
+        for(i=0;i<300;i++){}
+        esperar();
+
+        I2C0_MSA_R=(AdreDS1307<<1)&0xFE;
+        I2C0_MSA_R|=0x01;
+        I2C0_MCS_R=(I2C_MCS_START|I2C_MCS_RUN|I2C_MCS_ACK);
+        for(i=0;i<300;i++){}
+        esperar();
+        segundos=(I2C0_MDR_R&0xFF);
+
+        I2C0_MCS_R=(I2C_MCS_RUN|I2C_MCS_ACK);
+        for(i=0;i<300;i++){}
+        esperar();
+        minutos=(I2C0_MDR_R&0xFF);
+
+         I2C0_MCS_R=(I2C_MCS_RUN|I2C_MCS_ACK);
+         for(i=0;i<300;i++){}
+         esperar();
+         horas=(I2C0_MDR_R&0xFF);
+
+         I2C0_MCS_R=(I2C_MCS_STOP|I2C_MCS_RUN);
+}
+
+//ENVIAR DATOS DEL RTC
+void RTCREAD()
 {
-while   ((UART0_FR_R&0X0020)!=0);
-UART0_DR_R=dato1;
+    while(I2C0_MCS_R&0x00000001){};
+    CargarFecha(); // Función para configurar al esclavo RTC DS1307
+    LeerFecha();
 }
 
-//UART TELEFONO
-char UART6_Lee_Dato(void)
+//LEER DATO DE TIVA 1
+char UART6_Lee_dato(void)
 {
-while((UART6_FR_R&0X0010)!=0);
-d_uint8Message=((char)(UART6_DR_R&0xff));
+    //while((UART6_FR_R&0X0010)!=0); //ESPERAR A QUE RXFE SEA CERO
+    d_uint8Dato=((char)(UART6_DR_R&0xff));//lecturayescritura
 }
-
-char UART6_Escribe_Dato(char dato)
-{
-UART6_DR_R=dato;
-}
-
-//OPCIÓN LIBRE
-void DEVELOPMENTCREDITS(void)
-{
-    ESCDAT('2');
-    ESCDAT('0');
-    ESCDAT('2');
-    ESCDAT('4');
-    ESCDAT('-');
-    ESCDAT('1');
-    ESCCON(0xC0);
-    ESCDAT('A');
-    ESCDAT('D');
-    ESCDAT('O');
-    ESCDAT('L');
-    ESCDAT('F');
-    ESCDAT('O');
-    ESCDAT(' ');
-    ESCDAT('R');
-    ESCDAT('O');
-    ESCDAT('J');
-    ESCDAT('A');
-    ESCDAT('S');
-    SysCtlDelay(16000000);
-    main();
-}
-
-//FUNCIONES DE CONTROL
-void DOORCONTROL(void)
-{
-    d_uint8Dato= 23;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('D');
-    ESCDAT('O');
-    ESCDAT('O');
-    ESCDAT('R');
-    ESCCON(0xC0);
-    ESCDAT('O');
-    ESCDAT('P');
-    ESCDAT('E');
-    ESCDAT('N');
-    ESCDAT('E');
-    ESCDAT('D');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void LED1CONTROL(void)
-{
-    d_uint8Dato= 24;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('L');
-    ESCDAT('I');
-    ESCDAT('G');
-    ESCDAT('H');
-    ESCDAT('T');
-    ESCCON(0xC0);
-    ESCDAT('1');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void LED2CONTROL(void)
-{
-    d_uint8Dato= 25;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('L');
-    ESCDAT('I');
-    ESCDAT('G');
-    ESCDAT('H');
-    ESCDAT('T');
-    ESCCON(0xC0);
-    ESCDAT('2');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void LED3CONTROL(void)
-{
-    d_uint8Dato= 26;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('L');
-    ESCDAT('I');
-    ESCDAT('G');
-    ESCDAT('H');
-    ESCDAT('T');
-    ESCCON(0xC0);
-    ESCDAT('3');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void LED4CONTROL(void)
-{
-    d_uint8Dato= 27;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('L');
-    ESCDAT('I');
-    ESCDAT('G');
-    ESCDAT('H');
-    ESCDAT('T');
-    ESCCON(0xC0);
-    ESCDAT('4');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void FOODCONTROL(void)
-{
-    d_uint8Dato= 28;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('Y');
-    ESCDAT('U');
-    ESCDAT('M');
-    ESCDAT('!');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void MATRIXCONTROL(void)
-{
-    d_uint8Dato= 29;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('M');
-    ESCDAT('A');
-    ESCDAT('T');
-    ESCDAT('R');
-    ESCDAT('I');
-    ESCDAT('X');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void POWERCONTROL(void)
-{
-    d_uint8Dato= 30;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('M');
-    ESCDAT('O');
-    ESCDAT('D');
-    ESCDAT('U');
-    ESCDAT('L');
-    ESCDAT('A');
-    ESCDAT('T');
-    ESCDAT('E');
-    SysCtlDelay(16000000);
-    main();
-}
-
-void ALARMCONTROL(void)
-{
-    d_uint8Dato= 31;
-    UART0_Escribe_Dato(d_uint8Dato);
-    ESCDAT('O');
-    ESCDAT('F');
-    ESCDAT('F');
-    SysCtlDelay(16000000);
-    main();
-}
-
-//FUNCIONES TELEFONO
-
-void C_ENTER(void)
-{
-    UART6_Escribe_Dato(CR);
-    UART6_Escribe_Dato(LF);
-}
-
